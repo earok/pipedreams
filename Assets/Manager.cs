@@ -55,12 +55,15 @@ public class Manager : MonoBehaviour
 	public Text Statistics_Bend;
 	public Text Statistics_Corner;
 	public Text Statistics_CornerShort;
+	public Text RecipeText;
 
 	[Header("Confirm Panel")]
 	public GameObject ConfirmPanel;
 	public Text ConfirmPanelText;
 	public string ConfirmPanelText_Restart;
 	public string ConfirmPanelText_RestartAll;
+	public string ConfirmPanelText_DeleteAllPrevious;
+	public string ConfirmPanelText_DeleteAllNext;
 
 	[Header("Camera Movement Panel")]
 	public Text CameraMovementAmountButton_Text;
@@ -143,6 +146,33 @@ public class Manager : MonoBehaviour
 
 	public SaveData Clipboard { get; private set; }
 
+	public Vector3 PipeRootPos
+	{
+		get
+		{
+			return PipeRoot.transform.localPosition;
+		}
+		set
+		{
+			PipeRoot.transform.localPosition = value;
+			IsDirty = true;
+		}
+	}
+
+	public Vector3 PipeRootPos_Global
+	{
+		get
+		{
+			return PipeRoot.transform.position;
+		}
+		set
+		{
+			PipeRoot.transform.position = value;
+			IsDirty = true;
+		}
+	}
+
+
 	int _saveIndex = 1;
 
 	public void ChangeBackgroundColor()
@@ -196,10 +226,8 @@ public class Manager : MonoBehaviour
 		StartPipe = SelectedPipe;
 		StartPipe.transform.parent = PipeRoot;
 		StartPipe.transform.localPosition = StartPipe.transform.localEulerAngles = Vector3.zero;
-
-		PipeRoot.transform.localPosition = new Vector3(0, 0, 10);
-		PipeRoot.transform.localEulerAngles = new Vector3(90, 0, 180);
-		Save();
+		PipeRoot.transform.localPosition = PipeRoot.transform.localEulerAngles = Vector3.zero;
+		IsDirty = true;
 	}
 
 	public void RestartAllAction()
@@ -254,9 +282,12 @@ public class Manager : MonoBehaviour
 		int cornerShortCount = 0;
 		int offset = 0;
 
+		RecipeText.text = "";
 		var pipe = StartPipe;
 		while (pipe)
 		{
+			RecipeText.text += pipe.PipeType.ToString()[0];
+
 			switch (pipe.PipeType)
 			{
 				case Pipe.PipeTypes.Bend:
@@ -331,11 +362,11 @@ public class Manager : MonoBehaviour
 	{
 		IsDirty = true;
 
-		if(SelectedPipe.Color == color)
+		if (SelectedPipe.Color == color)
 		{
 			//Set the entire length of pipe to this color
 			var pipe = StartPipe;
-			while(pipe)
+			while (pipe)
 			{
 				pipe.Color = color;
 				pipe = pipe.NextPipe;
@@ -354,7 +385,7 @@ public class Manager : MonoBehaviour
 
 
 		var newPipeType = SelectedPipe.PipeType + 1;
-		if(newPipeType > Pipe.PipeTypes.Torus)
+		if (newPipeType > Pipe.PipeTypes.Torus)
 		{
 			newPipeType = Pipe.PipeTypes.Short;
 		}
@@ -481,31 +512,38 @@ public class Manager : MonoBehaviour
 
 	public void RotateXAbsolute(int value)
 	{
-		//PipeRoot.transform.localEulerAngles += (new Vector3(0, value * 10, 0));
-		PipeRoot.transform.Rotate(new Vector3(0, value * CameraRotationAmount, 0), Space.World);
+		PipeRoot.transform.Rotate(new Vector3(value * CameraRotationAmount, 0, 0), Space.World);
+		IsDirty = true;
 	}
 
 	public void RotateYAbsolute(int value)
 	{
 
-		PipeRoot.transform.Rotate(new Vector3(value * CameraRotationAmount, 0, 0), Space.World);
+		PipeRoot.transform.Rotate(new Vector3(0, value * CameraRotationAmount, 0), Space.World);
+		IsDirty = true;
+	}
+
+	public void RotateZAbsolute(int value)
+	{
+
+		PipeRoot.transform.Rotate(new Vector3(0, 0, value * CameraRotationAmount), Space.World);
+		IsDirty = true;
 	}
 
 	public void MoveX(int value)
 	{
-		PipeRoot.transform.position += new Vector3(value * CameraMovementAmount / 15f, 0, 0);
+		PipeRootPos_Global += new Vector3(value * CameraMovementAmount / 15f, 0, 0); ;
 	}
 
 	public void MoveY(int value)
 	{
-		PipeRoot.transform.position += new Vector3(0, value * CameraMovementAmount / 15f, 0);
+		PipeRootPos_Global += new Vector3(0, value * CameraMovementAmount / 15f, 0);
 	}
 
 	public void MoveZ(int value)
 	{
-		PipeRoot.transform.position += new Vector3(0, 0, value * CameraMovementAmount / 15);
+		PipeRootPos_Global += new Vector3(0, 0, value * CameraMovementAmount / 15);
 	}
-
 
 
 
@@ -514,58 +552,119 @@ public class Manager : MonoBehaviour
 		SelectedPipe.Rotation += value * RotateAmount;
 	}
 
-	public void DeletePipeLast()
+	public void DeleteSelectedPipe()
 	{
-		//Don't allow deletion of the very last remaining pipe piece
-		if (!SelectedPipe.PreviousPipe && !SelectedPipe.NextPipe) return;
-
-		var lastPipe = SelectedPipe;
-		while (lastPipe.NextPipe) lastPipe = lastPipe.NextPipe;
-
-		if (lastPipe == SelectedPipe)
+		var targetPipe = SelectedPipe;
+		if (targetPipe.NextPipe)
 		{
-			SelectedPipe = lastPipe.PreviousPipe;
+			SelectedPipe = targetPipe.NextPipe;
+			DeletePipe(targetPipe);
 		}
-		Destroy(lastPipe.gameObject);
+		else if (targetPipe.PreviousPipe)
+		{
+			SelectedPipe = targetPipe.PreviousPipe;
+			DeletePipe(targetPipe);
+		}
+	}
+
+	public void DeletePreviousPipe()
+	{
+		if (SelectedPipe.PreviousPipe)
+		{
+			DeletePipe(SelectedPipe.PreviousPipe);
+		}
+	}
+
+	public void DeleteNextPipe()
+	{
+		if (SelectedPipe.NextPipe)
+		{
+			DeletePipe(SelectedPipe.NextPipe);
+		}
+	}
+
+	public void DeletePreviousAll()
+	{
+		if (!SelectedPipe.PreviousPipe) return;
+		ConfirmAction = DeletePreviousAllAction;
+		ConfirmPanelText.text = ConfirmPanelText_DeleteAllPrevious;
+		ConfirmPanel.SetActive(true);
+	}
+
+	public void DeletePreviousAllAction()
+	{
+		while (SelectedPipe.PreviousPipe)
+		{
+			DeletePipe(SelectedPipe.PreviousPipe);
+		}
+	}
+
+	public void DeleteNextAll()
+	{
+		if (!SelectedPipe.NextPipe) return;
+		ConfirmAction = DeleteNextAllAction;
+		ConfirmPanelText.text = ConfirmPanelText_DeleteAllNext;
+		ConfirmPanel.SetActive(true);
+	}
+
+	public void DeleteNextAllAction()
+	{
+		while (SelectedPipe.NextPipe)
+		{
+			DeletePipe(SelectedPipe.NextPipe);
+		}
 	}
 
 
-	public void DeletePipe()
+	public void DeletePipe(Pipe TargetPipe)
 	{
 		//A middle piece
-		if (SelectedPipe.PreviousPipe && SelectedPipe.NextPipe)
+		if (TargetPipe.PreviousPipe && TargetPipe.NextPipe)
 		{
 			//Middle section, so join the two joining bits together
-			var nextPipe = SelectedPipe.NextPipe;
-			var previousPipe = SelectedPipe.PreviousPipe;
-			Destroy(SelectedPipe.gameObject);
+			var nextPipe = TargetPipe.NextPipe;
+			var previousPipe = TargetPipe.PreviousPipe;
+			Destroy(TargetPipe.gameObject);
 
 			nextPipe.PreviousPipe = previousPipe;
 			previousPipe.NextPipe = nextPipe;
 
-			SelectedPipe = previousPipe;
-			nextPipe.transform.parent = SelectedPipe.EndPivot;
+			nextPipe.transform.parent = previousPipe.EndPivot;
 			nextPipe.transform.localPosition = Vector3.zero;
 			nextPipe.transform.localRotation = Quaternion.identity;
-			SelectedPipe = nextPipe;
+			IsDirty = true;
 		}
 		//Last piece, just cut off the ending
-		else if (SelectedPipe.PreviousPipe)
+		else if (TargetPipe.PreviousPipe)
 		{
-			SelectedPipe = SelectedPipe.PreviousPipe;
-			Destroy(SelectedPipe.NextPipe.gameObject);
+			TargetPipe.PreviousPipe.NextPipe = null;
+			Destroy(TargetPipe.gameObject);
+			IsDirty = true;
 		}
 		//First piece, just cut off the start
-		else if (SelectedPipe.NextPipe)
+		else if (TargetPipe.NextPipe)
 		{
-			StartPipe = SelectedPipe = SelectedPipe.NextPipe;
-			Destroy(SelectedPipe.PreviousPipe.gameObject);
+			TargetPipe.NextPipe.PreviousPipe = null;
+			StartPipe = TargetPipe.NextPipe;
+			StartPipe.transform.parent = PipeRoot.transform;
+			PipeRoot.transform.position = StartPipe.transform.position;
+			PipeRoot.transform.rotation = StartPipe.transform.rotation;
+			StartPipe.transform.localPosition = Vector3.zero;
+			StartPipe.transform.localRotation = Quaternion.identity;
+			Destroy(TargetPipe.gameObject);
+			IsDirty = true;
 		}
 	}
 
 	public SaveData GetSaveData()
 	{
-		var saveData = new SaveData() { BackgroundColor = Camera.main.backgroundColor };
+		var saveData = new SaveData()
+		{
+			BackgroundColor = Camera.main.backgroundColor,
+			PipeRootPos = PipeRootPos,
+			PipeRootRot = PipeRoot.transform.localEulerAngles,
+		};
+
 		var pipe = StartPipe;
 		while (pipe)
 		{
@@ -618,6 +717,8 @@ public class Manager : MonoBehaviour
 			restoreData.Pipes.Add(new PipeSaveData() { Color = new Color(0.5f, 0.5f, 0.5f, 1), PipeType = Pipe.PipeTypes.Corner, Rotation = 0 });
 		}
 
+		PipeRootPos = restoreData.PipeRootPos;
+		PipeRoot.transform.localEulerAngles = restoreData.PipeRootRot;
 		Camera.main.backgroundColor = restoreData.BackgroundColor;
 
 		//Delete all pipes and start from scratch

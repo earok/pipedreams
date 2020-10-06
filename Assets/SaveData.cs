@@ -11,6 +11,8 @@ public class SaveData
 {
 	public Color BackgroundColor = new Color(49 / 255f, 77 / 255f, 121 / 255f);
 	public List<PipeSaveData> Pipes = new List<PipeSaveData>();
+	public Vector3 PipeRootPos;
+	public Vector3 PipeRootRot;
 
 	public static SaveData LoadPipe(int index)
 	{
