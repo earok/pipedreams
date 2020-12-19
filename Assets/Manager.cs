@@ -3,9 +3,19 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.Tracing;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
+
+[Serializable]
+public class ImportData
+{
+	public int ID;
+	public string JSON;
+}
+
+
 
 public class Manager : MonoBehaviour
 {
@@ -45,6 +55,8 @@ public class Manager : MonoBehaviour
 
 	Pipe _selectedPipe;
 
+	[Header("Data")]
+	public List<ImportData> Data;
 
 	[Header("Statistics")]
 	public Image SaveImage;
@@ -55,7 +67,7 @@ public class Manager : MonoBehaviour
 	public Text Statistics_Bend;
 	public Text Statistics_Corner;
 	public Text Statistics_CornerShort;
-	public Text RecipeText;
+	public TextMeshProUGUI RecipeText;
 
 	[Header("Confirm Panel")]
 	public GameObject ConfirmPanel;
@@ -72,7 +84,12 @@ public class Manager : MonoBehaviour
 	public Text CameraRotationAmountButton_Text;
 	public int[] CameraRotationAmounts;
 
+	[Header("Raw Data")]
+	public GameObject RawData;
+	public InputField RawDataText;
+
 	[Header("Other")]
+	public InputField DreamName;
 	public Text SelectedDream;
 	public Color SelectedRotationColor;
 	public Transform PipeRoot;
@@ -81,6 +98,8 @@ public class Manager : MonoBehaviour
 	public Pipe BendPipePrefab;
 	public Pipe CornerPipePrefab;
 	public Pipe CornerShortPipePrefab;
+	public Slider ThicknessSlider;
+	public Text ThicknessText;
 
 	public Transform CameraPivot;
 
@@ -96,6 +115,14 @@ public class Manager : MonoBehaviour
 	Pipe StartPipe;
 	bool IsDirty;
 	UnityAction ConfirmAction;
+
+	internal float Thickness = 1;
+
+	public void SetThickness(float value)
+	{
+		Thickness = value / 10f;
+		ThicknessText.text = string.Format("Thickness: {0:F1}", Thickness);
+	}
 
 	int CameraRotationAmount
 	{
@@ -215,19 +242,8 @@ public class Manager : MonoBehaviour
 
 	public void RestartAction()
 	{
-		foreach (var pipe in FindObjectsOfType<Pipe>())
-		{
-			Destroy(pipe.gameObject);
-		}
-
-		SelectedPipe = StartPipe = null;
-		CameraPivot.transform.position = CameraPivot.transform.eulerAngles = Vector3.zero;
-		NewCorner();
-		StartPipe = SelectedPipe;
-		StartPipe.transform.parent = PipeRoot;
-		StartPipe.transform.localPosition = StartPipe.transform.localEulerAngles = Vector3.zero;
-		PipeRoot.transform.localPosition = PipeRoot.transform.localEulerAngles = Vector3.zero;
-		IsDirty = true;
+		SaveData.DeletePipe(SaveIndex);
+		Restore(SaveData.LoadPipe(SaveIndex));
 	}
 
 	public void RestartAllAction()
@@ -262,6 +278,34 @@ public class Manager : MonoBehaviour
 
 	private void Update()
 	{
+		if (Input.GetKeyDown(KeyCode.Z) && Input.GetKey(KeyCode.LeftControl))
+		{
+			Camera.main.backgroundColor = new Color32(49, 77, 121, 255);
+			var thisPipe = StartPipe;
+			while (thisPipe)
+			{
+				thisPipe.Color = new Color32(128, 128, 128, 255);
+				thisPipe = thisPipe.NextPipe;
+			}
+		}
+
+		if (Input.GetMouseButtonDown(0))
+		{
+			var index = (TMP_TextUtilities.FindIntersectingCharacter(RecipeText, Input.mousePosition, null, true));
+			if (index > -1)
+			{
+				var row = index / 6;
+				var characterOffset = row * 5 + Mathf.Clamp(index % 6, 0, 5);
+
+				SelectedPipe = StartPipe;
+				while (characterOffset > 0 && SelectedPipe.NextPipe)
+				{
+					SelectedPipe = SelectedPipe.NextPipe;
+					characterOffset--;
+				}
+			}
+		}
+
 		var blinktime = Time.time % 1;
 		if (blinktime >= 0.5f && IsDirty)
 		{
@@ -286,7 +330,16 @@ public class Manager : MonoBehaviour
 		var pipe = StartPipe;
 		while (pipe)
 		{
+			if (pipe == SelectedPipe)
+			{
+				RecipeText.text += "<color=#ffdf7d>";
+			}
+
 			RecipeText.text += pipe.PipeType.ToString()[0];
+			if (allCount % 5 == 4)
+			{
+				RecipeText.text += " ";
+			}
 
 			switch (pipe.PipeType)
 			{
@@ -315,23 +368,40 @@ public class Manager : MonoBehaviour
 			if (pipe == SelectedPipe)
 			{
 				offset = allCount;
+				RecipeText.text += "</color>";
 			}
 
 			pipe = pipe.NextPipe;
 		}
+
+		//Fill in the rest with blanks
+		var recipeCount = allCount;
+		while (recipeCount < 30)
+		{
+			RecipeText.text += "_";
+			if (recipeCount % 5 == 4)
+			{
+				RecipeText.text += " ";
+			}
+			recipeCount++;
+		}
+
 
 		Statistics_Short.text = string.Format("{0:d2}", shortCount);
 		Statistics_Long.text = string.Format("{0:d2}", longCount);
 		Statistics_Bend.text = string.Format("{0:d2}", bendCount);
 		Statistics_Corner.text = string.Format("{0:d2}", cornerCount);
 		Statistics_CornerShort.text = string.Format("{0:d2}", cornerShortCount);
-		Statistics_All.text = string.Format("{0:d2} / {1:d2}", offset, allCount);
+		Statistics_All.text = string.Format("{0:d2}/{1:d2}", offset, allCount);
 	}
 
-	public void PreviousPipe()
+	public void PreviousPipe(int Offset)
 	{
-		if (!SelectedPipe.PreviousPipe) return;
-		SelectedPipe = SelectedPipe.PreviousPipe;
+		while (Offset > 0 && SelectedPipe.PreviousPipe)
+		{
+			SelectedPipe = SelectedPipe.PreviousPipe;
+			Offset -= 1;
+		}
 	}
 
 	public void SetSaveIndex(int offset)
@@ -339,10 +409,13 @@ public class Manager : MonoBehaviour
 		SaveIndex += offset;
 	}
 
-	public void NextPipe()
+	public void NextPipe(int Offset)
 	{
-		if (!SelectedPipe.NextPipe) return;
-		SelectedPipe = SelectedPipe.NextPipe;
+		while (Offset > 0 && SelectedPipe.NextPipe)
+		{
+			SelectedPipe = SelectedPipe.NextPipe;
+			Offset -= 1;
+		}
 	}
 
 	public void FirstPipe()
@@ -382,14 +455,43 @@ public class Manager : MonoBehaviour
 	public void CyclePipeType()
 	{
 		IsDirty = true;
-
-
 		var newPipeType = SelectedPipe.PipeType + 1;
 		if (newPipeType > Pipe.PipeTypes.Torus)
 		{
 			newPipeType = Pipe.PipeTypes.Short;
 		}
 
+		ChangeCurrentPipe(newPipeType);
+	}
+
+	public void ChangeCurrentPipe(string letter)
+	{
+		switch (letter.ToLower())
+		{
+			case "s":
+				ChangeCurrentPipe(Pipe.PipeTypes.Short);
+				break;
+
+			case "b":
+				ChangeCurrentPipe(Pipe.PipeTypes.Bend);
+				break;
+
+			case "c":
+				ChangeCurrentPipe(Pipe.PipeTypes.Corner);
+				break;
+
+			case "l":
+				ChangeCurrentPipe(Pipe.PipeTypes.Long);
+				break;
+
+			case "t":
+				ChangeCurrentPipe(Pipe.PipeTypes.Torus);
+				break;
+		}
+	}
+
+	private void ChangeCurrentPipe(Pipe.PipeTypes newPipeType)
+	{
 		var oldPipe = SelectedPipe;
 		var previousPipe = SelectedPipe.PreviousPipe;
 		var nextPipe = SelectedPipe.NextPipe;
@@ -438,8 +540,10 @@ public class Manager : MonoBehaviour
 		}
 		else
 		{
+			//If is first pipe
 			SelectedPipe.transform.position = oldPipe.transform.position;
 			SelectedPipe.transform.rotation = oldPipe.transform.rotation;
+			SelectedPipe.transform.parent = PipeRoot.transform;
 		}
 
 		if (StartPipe == oldPipe)
@@ -482,7 +586,7 @@ public class Manager : MonoBehaviour
 		{
 			while (SelectedPipe.NextPipe)
 			{
-				NextPipe();
+				SelectedPipe = SelectedPipe.NextPipe;
 			}
 		}
 
@@ -660,22 +764,60 @@ public class Manager : MonoBehaviour
 	{
 		var saveData = new SaveData()
 		{
+			DreamName = DreamName.text,
 			BackgroundColor = Camera.main.backgroundColor,
+			Thickness = Thickness.ToString("F1"),
 			PipeRootPos = PipeRootPos,
 			PipeRootRot = PipeRoot.transform.localEulerAngles,
+			PipeRootParentScale = PipeRoot.transform.parent.localScale,
+			Recipe = "",
 		};
 
 		var pipe = StartPipe;
+		var pieces = 0;
+		int S = 0, L = 0, B = 0, C = 0, T = 0;
+
 		while (pipe)
 		{
 			saveData.Pipes.Add(new PipeSaveData()
 			{
 				Rotation = pipe.Rotation,
-				PipeType = pipe.PipeType,
+				PipeType = pipe.PipeType.ToString()[0].ToString(),
 				Color = pipe.Color
 			});
+
+			switch (pipe.PipeType)
+			{
+				case Pipe.PipeTypes.Short:
+					S++;
+					break;
+				case Pipe.PipeTypes.Long:
+					L++;
+					break;
+				case Pipe.PipeTypes.Bend:
+					B++;
+					break;
+				case Pipe.PipeTypes.Corner:
+					C++;
+					break;
+				case Pipe.PipeTypes.Torus:
+					C++;
+					break;
+			}
+
+			saveData.Recipe += pipe.PipeType.ToString()[0];
+			if (pieces % 5 == 4)
+			{
+				saveData.Recipe += " ";
+			}
+			pieces++;
+
 			pipe = pipe.NextPipe;
 		}
+
+		saveData.Spectrum_SLBCT = string.Format("{0},{1},{2},{3},{4}", S, L, B, C, T);
+		saveData.Pieces = pieces;
+		saveData.Store = SaveIndex;
 		return saveData;
 	}
 
@@ -708,50 +850,118 @@ public class Manager : MonoBehaviour
 		IsDirty = false;
 	}
 
-	public void Restore(SaveData restoreData)
+	public void Reverse(int axis)
+	{
+		var scale = PipeRoot.parent.localScale;
+		switch (axis)
+		{
+			case 0:
+				scale.x *= -1;
+				break;
+			case 1:
+				scale.y *= -1;
+				break;
+			case 2:
+				scale.z *= -1;
+				break;
+		}
+		PipeRoot.parent.localScale = scale;
+		IsDirty = true;
+	}
+
+	public void OpenRawData()
+	{
+		RawDataText.text = JsonUtility.ToJson(GetSaveData(), true);
+		RawData.gameObject.SetActive(true);
+	}
+
+	public void CloseRawData()
+	{
+		Restore(JsonUtility.FromJson<SaveData>(RawDataText.text));
+		RawData.gameObject.SetActive(false);
+	}
+
+	/* come back to reversing
+	public void ReverseDream()
+	{
+		//Get last pipe
+		var pipe = StartPipe;
+		while(pipe.NextPipe)
+		{
+			pipe = pipe.NextPipe;
+		}
+
+		//Go through pipes backwards
+		var newStart = ClonePipe(pipe);
+		pipe = pipe.PreviousPipe;
+
+		while(pipe.PreviousPipe)
+		{
+			ClonePipe(pipe);
+			pipe = pipe.PreviousPipe;
+		}
+
+
+		//StartPipe = NewPipe();
+
+	}*/
+
+	private object ClonePipe(Pipe pipe)
+	{
+		throw new NotImplementedException();
+	}
+
+	public void Restore(SaveData restoreData, bool reverse = false)
 	{
 		if (restoreData == null || restoreData.Pipes.Count == 0)
 		{
 			//Default setup
 			restoreData = new SaveData();
-			restoreData.Pipes.Add(new PipeSaveData() { Color = new Color(0.5f, 0.5f, 0.5f, 1), PipeType = Pipe.PipeTypes.Corner, Rotation = 0 });
+			restoreData.Pipes.Add(new PipeSaveData() { Color = new Color(0.5f, 0.5f, 0.5f, 1), PipeType = "C", Rotation = 0 });
 		}
 
+		PipeRoot.transform.parent.localScale = restoreData.PipeRootParentScale;
 		PipeRootPos = restoreData.PipeRootPos;
 		PipeRoot.transform.localEulerAngles = restoreData.PipeRootRot;
+		DreamName.text = restoreData.DreamName;
+		ThicknessSlider.value = float.Parse(restoreData.Thickness) * 10;
 		Camera.main.backgroundColor = restoreData.BackgroundColor;
 
-		//Delete all pipes and start from scratch
-		var pipe = StartPipe;
-		while (pipe)
+		DeleteAllPipes();
+
+		var pipes = restoreData.Pipes;
+		if (reverse)
 		{
-			var deletePipe = pipe;
-			pipe = pipe.NextPipe;
-			Destroy(deletePipe.gameObject);
+			pipes.Reverse();
 		}
 
 		StartPipe = SelectedPipe = null;
 		foreach (var pipeData in restoreData.Pipes)
 		{
+			if (int.TryParse(pipeData.PipeType, out int value))
+			{
+				pipeData.PipeType = ((Pipe.PipeTypes)value).ToString()[0].ToString();
+			}
+
 			switch (pipeData.PipeType)
 			{
-				case Pipe.PipeTypes.Bend:
+				case "B":
 					NewBend();
 					break;
 
-				case Pipe.PipeTypes.Corner:
+				case "C":
 					NewCorner();
 					break;
 
-				case Pipe.PipeTypes.Torus:
+				case "T":
 					NewCornerShort();
 					break;
 
-				case Pipe.PipeTypes.Short:
+				case "S":
 					NewShort();
 					break;
 
-				case Pipe.PipeTypes.Long:
+				case "L":
 					NewLong();
 					break;
 			}
@@ -768,4 +978,20 @@ public class Manager : MonoBehaviour
 		}
 	}
 
+	private void DeleteAllPipes()
+	{
+		//Delete all pipes and start from scratch
+		var pipe = StartPipe;
+		while (pipe)
+		{
+			var deletePipe = pipe;
+			pipe = pipe.NextPipe;
+			Destroy(deletePipe.gameObject);
+		}
+	}
+
+	public void SetDirty()
+	{
+		IsDirty = true;
+	}
 }

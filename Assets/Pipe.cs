@@ -1,14 +1,33 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+
+
+[Serializable]
+public class PipeJoiner
+{
+	public Transform Pipe;
+	public Transform PipeConnector;
+}
+
+[Serializable]
+public class ScaleRoot
+{
+	public Transform Transform;
+	public Vector3 Modifier;
+}
 
 public class Pipe : MonoBehaviour
 {
 	public enum PipeTypes { Short, Long, Bend, Corner, Torus }
 	public PipeTypes PipeType;
 
+	public PipeJoiner[] PipeJoiners;
 	public MeshRenderer[] MeshRenderers;
+	public ScaleRoot[] ScaleRoots;
 	public Transform EndPivot;
+	public Transform EndPivotReal;
 
 	public Pipe PreviousPipe;
 	public Pipe NextPipe;
@@ -74,5 +93,26 @@ public class Pipe : MonoBehaviour
 		{
 			RefreshColor();
 		}
+
+		if (EndPivotReal)
+		{
+			EndPivot.transform.position = EndPivotReal.transform.position;
+		}
+
+		foreach (var pipeJoiner in PipeJoiners)
+		{
+			pipeJoiner.Pipe.transform.position = pipeJoiner.PipeConnector.transform.position;
+		}
+
+
+		foreach (var sr in ScaleRoots)
+		{
+			sr.Transform.localScale = new Vector3(
+				1 - (1 - Manager.Instance.Thickness) * sr.Modifier.x,
+				1 - (1 - Manager.Instance.Thickness) * sr.Modifier.y,
+				1 - (1 - Manager.Instance.Thickness) * sr.Modifier.z
+				);
+		}
+
 	}
 }
