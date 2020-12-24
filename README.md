@@ -10,7 +10,7 @@ Pipe Dreams is a Unity 2020 project by Dr. Karl Scherer and Erik Hogan to create
 
 Dr. Karl Scherer
 
-![Dr. Karl Scherer](Karl.jpg)
+![Dr. Karl Scherer](Karl.JPG)
 
 Erik Hogan
 
